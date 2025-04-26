@@ -22,6 +22,11 @@ export function MainNav() {
       active: pathname === "/board",
     },
     {
+      href: "/rules",
+      label: "Automation Rules",
+      active: pathname === "/rules",
+    },
+    {
       href: "/profile",
       label: "Profile",
       active: pathname === "/profile",

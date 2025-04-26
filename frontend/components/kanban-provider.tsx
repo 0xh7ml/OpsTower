@@ -2,21 +2,22 @@
 
 import type React from "react"
 
-import { createContext, useContext, useReducer } from "react"
-import type { Task } from "@/lib/types"
-import { mockTasks } from "@/lib/mock-data"
+import { createContext, useContext, useReducer, useCallback } from "react"
+import type { Task, AutomationRule } from "@/lib/types"
+import { mockTasks, mockRules } from "@/lib/mock-data"
 import { toast } from "react-hot-toast"
 
 // Define fixed columns
 const FIXED_COLUMNS = [
-  { id: "todo", title: "To Do", color: "bg-blue-500" },
-  { id: "in-progress", title: "In Progress", color: "bg-yellow-500" },
-  { id: "completed", title: "Completed", color: "bg-green-500" },
-  { id: "blocked", title: "Blocked", color: "bg-red-500" },
+  { id: "todo", title: "To Do", color: "bg-primary" },
+  { id: "in-progress", title: "In Progress", color: "bg-warning" },
+  { id: "completed", title: "Completed", color: "bg-success" },
+  { id: "blocked", title: "Blocked", color: "bg-destructive" },
 ]
 
 type KanbanState = {
   tasks: Task[]
+  rules: AutomationRule[]
 }
 
 type KanbanAction =
@@ -24,7 +25,11 @@ type KanbanAction =
   | { type: "UPDATE_TASK"; task: Task }
   | { type: "DELETE_TASK"; taskId: string }
   | { type: "MOVE_TASK"; taskId: string; destinationColumn: string }
-  | { type: "LOAD_DATA"; data: Task[] }
+  | { type: "ADD_RULE"; rule: AutomationRule }
+  | { type: "UPDATE_RULE"; rule: AutomationRule }
+  | { type: "DELETE_RULE"; ruleId: string }
+  | { type: "TOGGLE_RULE"; ruleId: string }
+  | { type: "LOAD_DATA"; data: { tasks: Task[]; rules: AutomationRule[] } }
 
 type KanbanContextType = {
   state: KanbanState
@@ -33,12 +38,18 @@ type KanbanContextType = {
   updateTask: (task: Task) => void
   deleteTask: (taskId: string) => void
   moveTask: (taskId: string, destinationColumn: string) => void
+  addRule: (rule: Omit<AutomationRule, "id" | "createdAt">) => void
+  updateRule: (rule: AutomationRule) => void
+  deleteRule: (ruleId: string) => void
+  toggleRule: (ruleId: string) => void
   saveData: () => void
   loadData: () => void
+  applyRules: (task: Task) => Task
 }
 
 const initialState: KanbanState = {
   tasks: [],
+  rules: [],
 }
 
 const KanbanContext = createContext<KanbanContextType | undefined>(undefined)
@@ -70,11 +81,28 @@ function kanbanReducer(state: KanbanState, action: KanbanAction): KanbanState {
           return task
         }),
       }
-    case "LOAD_DATA":
+    case "ADD_RULE":
       return {
         ...state,
-        tasks: action.data,
+        rules: [...state.rules, action.rule],
       }
+    case "UPDATE_RULE":
+      return {
+        ...state,
+        rules: state.rules.map((rule) => (rule.id === action.rule.id ? action.rule : rule)),
+      }
+    case "DELETE_RULE":
+      return {
+        ...state,
+        rules: state.rules.filter((rule) => rule.id !== action.ruleId),
+      }
+    case "TOGGLE_RULE":
+      return {
+        ...state,
+        rules: state.rules.map((rule) => (rule.id === action.ruleId ? { ...rule, enabled: !rule.enabled } : rule)),
+      }
+    case "LOAD_DATA":
+      return action.data
     default:
       return state
   }
@@ -84,7 +112,56 @@ export function KanbanProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(kanbanReducer, {
     ...initialState,
     tasks: mockTasks,
+    rules: mockRules,
   })
+
+  // Apply automation rules to a task
+  const applyRules = useCallback(
+    (task: Task): Task => {
+      let updatedTask = { ...task }
+
+      // Only apply enabled rules
+      const enabledRules = state.rules.filter((rule) => rule.enabled)
+
+      for (const rule of enabledRules) {
+        const { condition, action } = rule
+        const taskValue = updatedTask[condition.field]
+
+        let conditionMet = false
+
+        switch (condition.operator) {
+          case "equals":
+            conditionMet = taskValue === condition.value
+            break
+          case "not_equals":
+            conditionMet = taskValue !== condition.value
+            break
+          case "contains":
+            conditionMet = typeof taskValue === "string" && taskValue.includes(condition.value)
+            break
+          case "not_contains":
+            conditionMet = typeof taskValue === "string" && !taskValue.includes(condition.value)
+            break
+          case "starts_with":
+            conditionMet = typeof taskValue === "string" && taskValue.startsWith(condition.value)
+            break
+          case "ends_with":
+            conditionMet = typeof taskValue === "string" && taskValue.endsWith(condition.value)
+            break
+        }
+
+        if (conditionMet) {
+          updatedTask = {
+            ...updatedTask,
+            [action.field]: action.value,
+          }
+        }
+      }
+
+      return updatedTask
+    },
+    [state.rules],
+  )
 
   const addTask = (taskData: Omit<Task, "id" | "createdAt">) => {
     const newTask: Task = {
@@ -92,12 +169,19 @@ export function KanbanProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       ...taskData,
     }
-    dispatch({ type: "ADD_TASK", task: newTask })
+
+    // Apply rules before adding
+    const processedTask = applyRules(newTask)
+
+    dispatch({ type: "ADD_TASK", task: processedTask })
     toast.success("Task added successfully")
   }
 
   const updateTask = (task: Task) => {
-    dispatch({ type: "UPDATE_TASK", task })
+    // Apply rules before updating
+    const processedTask = applyRules(task)
+
+    dispatch({ type: "UPDATE_TASK", task: processedTask })
     toast.success("Task updated successfully")
   }
 
@@ -115,22 +199,78 @@ export function KanbanProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    dispatch({ type: "MOVE_TASK", taskId, destinationColumn })
+    // Find the task
+    const task = state.tasks.find((t) => t.id === taskId)
 
-    const columnTitle = FIXED_COLUMNS.find((c) => c.id === destinationColumn)?.title || destinationColumn
-    toast.success(`Task moved to ${columnTitle}`)
+    if (task) {
+      // Update the task status to match the column
+      const updatedTask = {
+        ...task,
+        status: destinationColumn as Task["status"],
+      }
+
+      // Apply rules after updating status
+      const processedTask = applyRules(updatedTask)
+
+      // If the rules changed the status, we need to update the task with the new status
+      if (processedTask.status !== destinationColumn) {
+        dispatch({ type: "UPDATE_TASK", task: processedTask })
+
+        const columnTitle = FIXED_COLUMNS.find((c) => c.id === processedTask.status)?.title || processedTask.status
+        toast.info(`Task moved to ${columnTitle} based on automation rules`)
+      } else {
+        dispatch({ type: "MOVE_TASK", taskId, destinationColumn })
+
+        const columnTitle = FIXED_COLUMNS.find((c) => c.id === destinationColumn)?.title || destinationColumn
+        toast.success(`Task moved to ${columnTitle}`)
+      }
+    }
+  }
+
+  const addRule = (ruleData: Omit<AutomationRule, "id" | "createdAt">) => {
+    const newRule: AutomationRule = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      ...ruleData,
+    }
+    dispatch({ type: "ADD_RULE", rule: newRule })
+    toast.success("Rule added successfully")
+  }
+
+  const updateRule = (rule: AutomationRule) => {
+    dispatch({ type: "UPDATE_RULE", rule })
+    toast.success("Rule updated successfully")
+  }
+
+  const deleteRule = (ruleId: string) => {
+    dispatch({ type: "DELETE_RULE", ruleId })
+    toast.success("Rule deleted successfully")
+  }
+
+  const toggleRule = (ruleId: string) => {
+    dispatch({ type: "TOGGLE_RULE", ruleId })
+    const rule = state.rules.find((r) => r.id === ruleId)
+    if (rule) {
+      toast.success(`Rule ${rule.enabled ? "disabled" : "enabled"} successfully`)
+    }
   }
 
   const saveData = () => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kanban-tasks", JSON.stringify(state.tasks))
+      localStorage.setItem(
+        "kanban-data",
+        JSON.stringify({
+          tasks: state.tasks,
+          rules: state.rules,
+        }),
+      )
       toast.success("Project data saved successfully")
     }
   }
 
   const loadData = () => {
     if (typeof window !== "undefined") {
-      const savedData = localStorage.getItem("kanban-tasks")
+      const savedData = localStorage.getItem("kanban-data")
       if (savedData) {
         dispatch({ type: "LOAD_DATA", data: JSON.parse(savedData) })
         toast.success("Project data loaded successfully")
@@ -149,8 +289,13 @@ export function KanbanProvider({ children }: { children: React.ReactNode }) {
         updateTask,
         deleteTask,
         moveTask,
+        addRule,
+        updateRule,
+        deleteRule,
+        toggleRule,
         saveData,
         loadData,
+        applyRules,
       }}
     >
       {children}

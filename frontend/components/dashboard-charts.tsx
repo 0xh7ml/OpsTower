@@ -7,18 +7,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { getTasksByStatus, getCompletionStats, getPriorityStats, getTasksForMonth } from "@/lib/utils"
 import { format, subMonths } from "date-fns"
-import {
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "@/components/ui/chart"
+import dynamic from "next/dynamic"
+
+// Dynamically import chart components with no SSR to avoid hydration issues
+const DynamicBarChart = dynamic(() => import("recharts").then((mod) => mod.BarChart), { ssr: false })
+const DynamicBar = dynamic(() => import("recharts").then((mod) => mod.Bar), { ssr: false })
+const DynamicPieChart = dynamic(() => import("recharts").then((mod) => mod.PieChart), { ssr: false })
+const DynamicPie = dynamic(() => import("recharts").then((mod) => mod.Pie), { ssr: false })
+const DynamicCell = dynamic(() => import("recharts").then((mod) => mod.Cell), { ssr: false })
+const DynamicResponsiveContainer = dynamic(() => import("recharts").then((mod) => mod.ResponsiveContainer), {
+  ssr: false,
+})
+const DynamicXAxis = dynamic(() => import("recharts").then((mod) => mod.XAxis), { ssr: false })
+const DynamicYAxis = dynamic(() => import("recharts").then((mod) => mod.YAxis), { ssr: false })
+const DynamicTooltip = dynamic(() => import("recharts").then((mod) => mod.Tooltip), { ssr: false })
+const DynamicLegend = dynamic(() => import("recharts").then((mod) => mod.Legend), { ssr: false })
 
 const COLORS = ["#3b82f6", "#eab308", "#22c55e", "#ef4444"]
 const COMPLETION_COLORS = ["#22c55e", "#94a3b8"]
@@ -73,15 +76,15 @@ export default function DashboardCharts() {
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusData}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <DynamicResponsiveContainer width="100%" height="100%">
+              <DynamicBarChart data={statusData}>
+                <DynamicXAxis dataKey="name" />
+                <DynamicYAxis />
+                <DynamicTooltip />
+                <DynamicLegend />
+                <DynamicBar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </DynamicBarChart>
+            </DynamicResponsiveContainer>
           </div>
         </CardContent>
       </Card>
@@ -93,9 +96,9 @@ export default function DashboardCharts() {
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
+            <DynamicResponsiveContainer width="100%" height="100%">
+              <DynamicPieChart>
+                <DynamicPie
                   data={completionData}
                   cx="50%"
                   cy="50%"
@@ -106,13 +109,13 @@ export default function DashboardCharts() {
                   label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                 >
                   {completionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COMPLETION_COLORS[index % COMPLETION_COLORS.length]} />
+                    <DynamicCell key={`cell-${index}`} fill={COMPLETION_COLORS[index % COMPLETION_COLORS.length]} />
                   ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+                </DynamicPie>
+                <DynamicTooltip />
+                <DynamicLegend />
+              </DynamicPieChart>
+            </DynamicResponsiveContainer>
           </div>
         </CardContent>
       </Card>
@@ -124,9 +127,9 @@ export default function DashboardCharts() {
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
+            <DynamicResponsiveContainer width="100%" height="100%">
+              <DynamicPieChart>
+                <DynamicPie
                   data={priorityData}
                   cx="50%"
                   cy="50%"
@@ -137,13 +140,13 @@ export default function DashboardCharts() {
                   label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                 >
                   {priorityData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PRIORITY_COLORS[index % PRIORITY_COLORS.length]} />
+                    <DynamicCell key={`cell-${index}`} fill={PRIORITY_COLORS[index % PRIORITY_COLORS.length]} />
                   ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+                </DynamicPie>
+                <DynamicTooltip />
+                <DynamicLegend />
+              </DynamicPieChart>
+            </DynamicResponsiveContainer>
           </div>
         </CardContent>
       </Card>
