@@ -177,3 +177,5 @@ pyrightconfig.json
 
 # migrations
 migrations/
+
+test.rest
