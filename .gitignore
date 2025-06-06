@@ -179,3 +179,5 @@ pyrightconfig.json
 migrations/
 
 test.rest
+
+!frontend/lib/
