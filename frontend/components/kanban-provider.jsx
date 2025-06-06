@@ -82,8 +82,20 @@ function transformDisplayTask(displayTask) {
     description: displayTask.description,
     status: mapDisplayStatus(displayTask.status),
     priority: mapDisplayPriority(displayTask.priority),
-    due_date: displayTask.due_date,
-    assigned_to: displayTask.assigned_to || "system", // Default value
+    due_date: displayTask.due_date
+  }
+}
+
+// Add debounce utility
+const debounce = (func, wait) => {
+  let timeout
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout)
+      func(...args)
+    }
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
   }
 }
 
@@ -164,34 +176,38 @@ export function KanbanProvider({ children }) {
     }
   }
 
-  const checkOverdueTasks = useCallback(async () => {
-    try {
-      const overdueTasks = getOverdueTasks(state.tasks)
+  // Debounce the checkOverdueTasks function
+  const debouncedCheckOverdueTasks = useCallback(
+    debounce(async () => {
+      try {
+        const overdueTasks = getOverdueTasks(state.tasks)
 
-      if (overdueTasks.length > 0) {
-        const blockedTasks = []
+        if (overdueTasks.length > 0) {
+          const blockedTasks = []
 
-        for (const task of overdueTasks) {
-          try {
-            const updatedTask = { ...task, status: "blocked" }
-            const apiTaskData = transformDisplayTask(updatedTask)
-            const updatedApiTask = await apiClient.updateTask(task.id, apiTaskData)
-            const transformedTask = transformApiTask(updatedApiTask)
-            blockedTasks.push(transformedTask)
-          } catch (error) {
-            console.error(`Failed to move overdue task ${task.id} to blocked:`, error)
+          for (const task of overdueTasks) {
+            try {
+              const updatedTask = { ...task, status: "blocked" }
+              const apiTaskData = transformDisplayTask(updatedTask)
+              const updatedApiTask = await apiClient.updateTask(task.id, apiTaskData)
+              const transformedTask = transformApiTask(updatedApiTask)
+              blockedTasks.push(transformedTask)
+            } catch (error) {
+              console.error(`Failed to move overdue task ${task.id} to blocked:`, error)
+            }
+          }
+
+          if (blockedTasks.length > 0) {
+            dispatch({ type: "MOVE_TASK_TO_BLOCKED", tasks: blockedTasks })
+            toast.success(`${blockedTasks.length} overdue task(s) moved to Blocked`)
           }
         }
-
-        if (blockedTasks.length > 0) {
-          dispatch({ type: "MOVE_TASK_TO_BLOCKED", tasks: blockedTasks })
-          toast.success(`${blockedTasks.length} overdue task(s) moved to Blocked`)
-        }
+      } catch (error) {
+        console.error("Error checking overdue tasks:", error)
       }
-    } catch (error) {
-      console.error("Error checking overdue tasks:", error)
-    }
-  }, [state.tasks])
+    }, 1000),
+    [state.tasks]
+  )
 
   const login = async (username, password) => {
     try {
@@ -243,18 +259,13 @@ export function KanbanProvider({ children }) {
     }
   }, [fetchTasks])
 
-  // Check for overdue tasks - only on client side and when tasks change
+  // Modify the useEffect for checking overdue tasks
   useEffect(() => {
     if (typeof window === "undefined") return
     if (state.tasks.length === 0) return
 
-    // Run once immediately
-    checkOverdueTasks()
-
-    // Then set up interval
-    const interval = setInterval(checkOverdueTasks, 60000) // Check every minute
-    return () => clearInterval(interval)
-  }, [checkOverdueTasks])
+    debouncedCheckOverdueTasks()
+  }, [state.tasks, debouncedCheckOverdueTasks])
 
   return (
     <KanbanContext.Provider
@@ -265,7 +276,7 @@ export function KanbanProvider({ children }) {
         updateTask,
         deleteTask,
         moveTask,
-        checkOverdueTasks,
+        checkOverdueTasks: debouncedCheckOverdueTasks,
         login,
         signup,
         logout,

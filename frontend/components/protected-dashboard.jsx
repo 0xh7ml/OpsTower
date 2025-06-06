@@ -39,7 +39,7 @@ export default function ProtectedDashboard() {
   return (
     <main className="container mx-auto py-6 px-4">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Project Management</h1>
+        <h1 className="text-3xl font-bold">Task Management</h1>
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted-foreground">
             API: {process.env.NEXT_PUBLIC_API_BASE_URL || "127.0.0.1:8000"}

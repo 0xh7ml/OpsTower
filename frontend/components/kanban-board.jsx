@@ -15,6 +15,13 @@ export default function KanbanBoard() {
   const [draggedTask, setDraggedTask] = useState(null)
   const [dragOverColumnId, setDragOverColumnId] = useState(null)
 
+  // Sort tasks by due date
+  const getSortedTasks = (columnId) => {
+    return state.tasks
+      .filter((task) => task.status === columnId)
+      .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+  }
+
   // Handle drag start
   const handleDragStart = (task) => {
     setDraggedTask(task)
@@ -29,6 +36,7 @@ export default function KanbanBoard() {
   // Handle drop on column
   const handleDrop = async (e, columnId) => {
     e.preventDefault()
+    e.stopPropagation() // Prevent event bubbling
 
     if (!draggedTask) return
 
@@ -136,7 +144,7 @@ export default function KanbanBoard() {
                 <div className={`w-3 h-3 rounded-full ${column.color} mr-2`}></div>
                 <h2 className="font-semibold">{column.title}</h2>
                 <div className="ml-2 bg-muted rounded-full px-2 py-0.5 text-xs">
-                  {state.tasks.filter((task) => task.status === column.id).length}
+                  {getSortedTasks(column.id).length}
                 </div>
               </div>
             </div>
@@ -146,30 +154,26 @@ export default function KanbanBoard() {
                 dragOverColumnId === column.id ? "bg-accent/20 outline outline-2 outline-dashed outline-accent/50" : ""
               }`}
               onDragOver={(e) => handleDragOver(e, column.id)}
-              onDrop={(e) => handleDrop(e, column.id)}
               data-column-id={column.id}
             >
-              {state.tasks
-                .filter((task) => task.status === column.id)
-                .map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onEdit={() => openEditTaskModal(task)}
-                    isDragging={draggedTask?.id === task.id}
-                    onDragStart={() => handleDragStart(task)}
-                    onDragEnd={handleDragEnd}
-                  />
-                ))}
+              {getSortedTasks(column.id).map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onEdit={() => openEditTaskModal(task)}
+                  isDragging={draggedTask?.id === task.id}
+                  onDragStart={() => handleDragStart(task)}
+                  onDragEnd={handleDragEnd}
+                />
+              ))}
 
               {/* Empty state for columns with no tasks */}
-              {state.tasks.filter((task) => task.status === column.id).length === 0 && (
+              {getSortedTasks(column.id).length === 0 && (
                 <div
                   className={`flex items-center justify-center h-40 border-2 border-dashed rounded-md ${
                     dragOverColumnId === column.id ? "bg-accent/20 border-primary/30" : "border-muted-foreground/20"
                   }`}
                   onDragOver={(e) => handleDragOver(e, column.id)}
-                  onDrop={(e) => handleDrop(e, column.id)}
                   data-column-id={column.id}
                   data-empty-column="true"
                 >

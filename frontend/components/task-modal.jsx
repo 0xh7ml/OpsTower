@@ -8,10 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { CalendarIcon } from "lucide-react"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { format } from "date-fns"
+import { format, parseISO } from "date-fns"
 
 export default function TaskModal({ isOpen, onClose, task }) {
   const { state, addTask, updateTask } = useKanban()
@@ -19,9 +16,8 @@ export default function TaskModal({ isOpen, onClose, task }) {
   const [description, setDescription] = useState("")
   const [status, setStatus] = useState("todo")
   const [priority, setPriority] = useState("medium")
-  const [dueDate, setDueDate] = useState(new Date())
+  const [dueDate, setDueDate] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
 
   // Reset form when modal opens/closes or task changes
   useEffect(() => {
@@ -31,21 +27,17 @@ export default function TaskModal({ isOpen, onClose, task }) {
         setDescription(task.description)
         setStatus(task.status)
         setPriority(task.priority)
-        setDueDate(new Date(task.due_date))
+        // Format the date to YYYY-MM-DD for the input
+        setDueDate(task.due_date ? format(parseISO(task.due_date), "yyyy-MM-dd") : "")
       } else {
         setTitle("")
         setDescription("")
         setStatus("todo")
         setPriority("medium")
-        setDueDate(new Date())
+        setDueDate("")
       }
     }
   }, [isOpen, task])
-
-  const handleDateSelect = (date) => {
-    setDueDate(date)
-    setIsCalendarOpen(false)
-  }
 
   const handleSubmit = async () => {
     if (!title.trim() || !dueDate) return
@@ -57,12 +49,11 @@ export default function TaskModal({ isOpen, onClose, task }) {
         description,
         status,
         priority,
-        due_date: dueDate.toISOString(),
-        assigned_to: "system", // Default assignee since we removed the field
+        due_date: new Date(dueDate).toISOString()
       }
 
       if (task) {
-        await updateTask({ ...taskData, id: task.id, assigned_to: task.assigned_to })
+        await updateTask({ ...taskData, id: task.id })
       } else {
         await addTask(taskData)
       }
@@ -135,22 +126,14 @@ export default function TaskModal({ isOpen, onClose, task }) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="dueDate">Due Date *</Label>
-            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="justify-start text-left font-normal"
-                  disabled={isSubmitting}
-                  onClick={() => setIsCalendarOpen(true)}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dueDate ? format(dueDate, "PPP") : "Select date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar mode="single" selected={dueDate} onSelect={handleDateSelect} initialFocus />
-              </PopoverContent>
-            </Popover>
+            <Input
+              type="date"
+              id="dueDate"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              disabled={isSubmitting}
+              className="w-full"
+            />
           </div>
         </div>
         <DialogFooter>

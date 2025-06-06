@@ -18,7 +18,7 @@ class Task(models.Model):
  
 
     title = models.CharField(max_length=200)
-    description = models.TextField()
+    description = models.TextField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='TODO')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='LOW')
     
