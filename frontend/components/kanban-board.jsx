@@ -1,52 +1,44 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useKanban } from "./kanban-provider"
 import TaskCard from "./task-card"
 import TaskModal from "./task-modal"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Save, RotateCcw } from "lucide-react"
-import type { Task } from "@/lib/types"
+import { PlusCircle, RefreshCw, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function KanbanBoard() {
-  const { state, columns, moveTask, saveData, loadData } = useKanban()
+  const { state, moveTask, fetchTasks, checkOverdueTasks } = useKanban()
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
-  const [editingTask, setEditingTask] = useState<Task | null>(null)
-  const [draggedTask, setDraggedTask] = useState<Task | null>(null)
-  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null)
+  const [editingTask, setEditingTask] = useState(null)
+  const [draggedTask, setDraggedTask] = useState(null)
+  const [dragOverColumnId, setDragOverColumnId] = useState(null)
 
   // Handle drag start
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, task: Task) => {
+  const handleDragStart = (task) => {
     setDraggedTask(task)
-
-    // Set drag image and data
-    e.dataTransfer.setData("text/plain", task.id)
-    e.dataTransfer.effectAllowed = "move"
-
-    // Add a class to the dragged element
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.classList.add("opacity-50")
-    }
   }
 
   // Handle drag over column
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
+  const handleDragOver = (e, columnId) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = "move"
     setDragOverColumnId(columnId)
   }
 
   // Handle drop on column
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
+  const handleDrop = async (e, columnId) => {
     e.preventDefault()
 
     if (!draggedTask) return
 
     // Only move if the task is being moved to a different column
     if (draggedTask.status !== columnId) {
-      moveTask(draggedTask.id, columnId)
+      try {
+        await moveTask(draggedTask.id, columnId)
+      } catch (error) {
+        // Error is handled in the provider
+      }
     }
 
     // Reset drag state
@@ -55,11 +47,7 @@ export default function KanbanBoard() {
   }
 
   // Handle drag end (cleanup)
-  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.classList.remove("opacity-50")
-    }
-
+  const handleDragEnd = () => {
     setDraggedTask(null)
     setDragOverColumnId(null)
   }
@@ -69,7 +57,7 @@ export default function KanbanBoard() {
     setIsTaskModalOpen(true)
   }
 
-  const openEditTaskModal = (task: Task) => {
+  const openEditTaskModal = (task) => {
     setEditingTask(task)
     setIsTaskModalOpen(true)
   }
@@ -79,8 +67,35 @@ export default function KanbanBoard() {
     setEditingTask(null)
   }
 
+  const handleRefresh = async () => {
+    try {
+      await fetchTasks()
+      await checkOverdueTasks()
+    } catch (error) {
+      // Error is handled in the provider
+    }
+  }
+
+  if (state.loading && state.tasks.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
+          <p>Loading tasks...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
+      {state.error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
           <Button onClick={openCreateTaskModal} className="flex items-center gap-2">
@@ -89,22 +104,27 @@ export default function KanbanBoard() {
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button onClick={saveData} variant="outline" className="flex items-center gap-2">
-            <Save className="h-4 w-4" />
-            Save Project
+          <Button
+            onClick={handleRefresh}
+            variant="outline"
+            className="flex items-center gap-2"
+            disabled={state.loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${state.loading ? "animate-spin" : ""}`} />
+            Refresh
           </Button>
-          <Button onClick={loadData} variant="outline" className="flex items-center gap-2">
-            <RotateCcw className="h-4 w-4" />
-            Load Project
+          <Button onClick={checkOverdueTasks} variant="outline" className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            Check Overdue
           </Button>
         </div>
       </div>
 
       <div className="flex flex-nowrap gap-6 overflow-x-auto pb-4 snap-x">
-        {columns.map((column) => (
+        {state.columns.map((column) => (
           <div
             key={column.id}
-            className={`border rounded-lg p-3 bg-muted/30 min-w-[250px] max-w-[280px] flex-shrink-0 snap-start ${
+            className={`border rounded-lg p-3 bg-muted/30 min-w-[280px] max-w-[300px] flex-shrink-0 snap-start ${
               dragOverColumnId === column.id ? "ring-2 ring-primary/40 bg-accent/10" : ""
             }`}
             onDragOver={(e) => handleDragOver(e, column.id)}
@@ -132,13 +152,14 @@ export default function KanbanBoard() {
               {state.tasks
                 .filter((task) => task.status === column.id)
                 .map((task) => (
-                  <div key={task.id} draggable onDragStart={(e) => handleDragStart(e, task)} onDragEnd={handleDragEnd}>
-                    <TaskCard
-                      task={task}
-                      onEdit={() => openEditTaskModal(task)}
-                      isDragging={draggedTask?.id === task.id}
-                    />
-                  </div>
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onEdit={() => openEditTaskModal(task)}
+                    isDragging={draggedTask?.id === task.id}
+                    onDragStart={() => handleDragStart(task)}
+                    onDragEnd={handleDragEnd}
+                  />
                 ))}
 
               {/* Empty state for columns with no tasks */}
