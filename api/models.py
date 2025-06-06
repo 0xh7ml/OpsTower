@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 class Task(models.Model):
     STATUS_CHOICES = [
         ('TODO', 'To Do'),
-        ('IN_PROGRESS', 'In Progress'),
+        ('IN PROGRESS', 'In Progress'),
         ('COMPLETED', 'Completed'),
         ('BLOCKED', 'Blocked'),
     ]
