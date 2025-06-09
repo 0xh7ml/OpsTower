@@ -1,3 +1,4 @@
+'use client'
 import { KanbanProvider } from "@/components/kanban-provider"
 import { Toaster } from "react-hot-toast"
 import dynamic from "next/dynamic"
