@@ -15,6 +15,16 @@ class UserSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
-        fields = ['id','title', 'description', 'status', 'priority', 'due_date', 'assigned_to', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
+        fields = ['id','title', 'description', 'status', 'priority', 'due_date', 'assigned_to', 'position', 'created_at', 'updated_at']
+        read_only_fields = ['position', 'created_at', 'updated_at']
 
+
+
+class ReorderItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=[c[0] for c in Task.STATUS_CHOICES])
+    position = serializers.IntegerField(min_value=0)
+
+
+class ReorderSerializer(serializers.Serializer):
+    items = ReorderItemSerializer(many=True, allow_empty=False, max_length=500)

@@ -9,7 +9,7 @@ import { useKanban } from "./kanban-provider"
 import { formatDate, isTaskOverdue } from "@/lib/utils"
 
 export default function TaskCard({ task, onEdit, isDragging = false, onDragStart, onDragEnd }) {
-  const { deleteTask } = useKanban()
+  const { deleteTask, shiftTask } = useKanban()
   const isOverdue = isTaskOverdue(task)
 
   const getPriorityColor = (priority) => {
@@ -61,6 +61,8 @@ export default function TaskCard({ task, onEdit, isDragging = false, onDragStart
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => shiftTask(task.id, -1)}>Move up</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => shiftTask(task.id, 1)}>Move down</DropdownMenuItem>
               <DropdownMenuItem onClick={handleDelete} className="text-red-600">
                 Delete
               </DropdownMenuItem>

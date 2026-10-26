@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useReducer, useEffect, useCallback } from "react"
 import { apiClient, getAuthToken, removeAuthToken, setAuthToken } from "@/lib/api"
-import { getOverdueTasks, mapApiStatus, mapDisplayStatus, mapApiPriority, mapDisplayPriority } from "@/lib/utils"
+import { compareByPosition, getOverdueTasks, mapApiStatus, mapDisplayStatus, mapApiPriority, mapDisplayPriority } from "@/lib/utils"
 import { toast } from "react-hot-toast"
 
 const fixedColumns = [
@@ -43,6 +43,16 @@ function kanbanReducer(state, action) {
         ...state,
         tasks: state.tasks.filter((task) => task.id !== action.taskId),
       }
+    case "REORDER_TASKS": {
+      const changes = new Map(action.items.map((item) => [item.id, item]))
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => {
+          const change = changes.get(task.id)
+          return change ? { ...task, status: change.status, position: change.position } : task
+        }),
+      }
+    }
     case "MOVE_TASK_TO_BLOCKED":
       return {
         ...state,
@@ -70,6 +80,7 @@ function transformApiTask(apiTask) {
     priority: mapApiPriority(apiTask.priority),
     due_date: apiTask.due_date,
     assigned_to: apiTask.assigned_to,
+    position: apiTask.position ?? 0,
     created_at: apiTask.created_at,
     updated_at: apiTask.updated_at,
   }
@@ -100,7 +111,11 @@ const debounce = (func, wait) => {
 }
 
 export function KanbanProvider({ children }) {
-  const [state, dispatch] = useReducer(kanbanReducer, initialState)
+  // Read the saved token up front: starting "logged out" and flipping in an effect made the
+  // login page and /home redirect to each other in a loop.
+  const [state, dispatch] = useReducer(kanbanReducer, initialState, (initial) =>
+    getAuthToken() ? { ...initial, isAuthenticated: true, user: { username: "User" } } : initial,
+  )
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -174,6 +189,41 @@ export function KanbanProvider({ children }) {
       toast.error(errorMessage)
       throw error
     }
+  }
+
+  /**
+   * Persist a new order. `items` is [{ id, status, position }] with display statuses
+   * ("todo", "in-progress", ...) covering every task whose column or position changed.
+   * Applied optimistically; reloaded from the server if the request fails.
+   */
+  const reorderTasks = async (items) => {
+    if (items.length === 0) return
+    const previousStatus = new Map(state.tasks.map((t) => [t.id, t.status]))
+    dispatch({ type: "REORDER_TASKS", items })
+    try {
+      await apiClient.reorderTasks(
+        items.map((i) => ({ id: i.id, status: mapDisplayStatus(i.status), position: i.position })),
+      )
+      const moved = items.find((i) => previousStatus.get(i.id) !== i.status)
+      if (moved) {
+        toast.success(`Task moved to ${fixedColumns.find((c) => c.id === moved.status)?.title || moved.status}`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to reorder tasks")
+      fetchTasks()
+    }
+  }
+
+  // Move a task one slot up (-1) or down (+1) inside its column (keyboard / touch alternative to dragging)
+  const shiftTask = async (taskId, delta) => {
+    const task = state.tasks.find((t) => t.id === taskId)
+    if (!task) return
+    const column = state.tasks.filter((t) => t.status === task.status).sort(compareByPosition)
+    const from = column.findIndex((t) => t.id === taskId)
+    const to = from + delta
+    if (to < 0 || to >= column.length) return
+    column.splice(to, 0, column.splice(from, 1)[0])
+    await reorderTasks(column.map((t, position) => ({ id: t.id, status: t.status, position })))
   }
 
   // Debounce the checkOverdueTasks function
@@ -276,6 +326,8 @@ export function KanbanProvider({ children }) {
         updateTask,
         deleteTask,
         moveTask,
+        reorderTasks,
+        shiftTask,
         checkOverdueTasks: debouncedCheckOverdueTasks,
         login,
         signup,
