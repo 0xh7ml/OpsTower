@@ -1,0 +1,22 @@
+{
+  "name": "opstower-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply opstower-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply opstower-db --remote"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.4.3",
+    "hono": "^4.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.10.0"
+  }
+}
