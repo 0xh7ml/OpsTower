@@ -40,6 +40,9 @@ class ApiClient {
     }
 
     if (!response.ok) {
+      if (response.status === 401 && endpoint.startsWith("/auth/")) {
+        throw new Error("Invalid email or password")
+      }
       if (response.status === 401) {
         removeAuthToken()
         window.location.href = "/"
@@ -78,6 +81,11 @@ class ApiClient {
     return response
   }
 
+  // Analytics
+  async getAnalytics(range = "week") {
+    return await this.request(`/analytics/?range=${encodeURIComponent(range)}`)
+  }
+
   // Task methods
   async getTasks() {
     try {
@@ -87,6 +95,14 @@ class ApiClient {
       console.error("Error fetching tasks:", error)
       return []
     }
+  }
+
+  // items: [{ id, status, position }] with API status values
+  async reorderTasks(items) {
+    return await this.request("/task/reorder/", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    })
   }
 
   async getTask(id) {

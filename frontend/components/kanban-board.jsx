@@ -7,19 +7,22 @@ import TaskModal from "./task-modal"
 import { Button } from "@/components/ui/button"
 import { PlusCircle, RefreshCw, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { compareByPosition } from "@/lib/utils"
 
 export default function KanbanBoard() {
-  const { state, moveTask, fetchTasks, checkOverdueTasks } = useKanban()
+  const { state, reorderTasks, fetchTasks, checkOverdueTasks } = useKanban()
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [draggedTask, setDraggedTask] = useState(null)
   const [dragOverColumnId, setDragOverColumnId] = useState(null)
+  // where the dragged card would land inside the hovered column (index among the other cards)
+  const [dropIndex, setDropIndex] = useState(null)
 
-  // Sort tasks by due date
+  // Tasks in manual (drag) order
   const getSortedTasks = (columnId) => {
     return state.tasks
       .filter((task) => task.status === columnId)
-      .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+      .sort(compareByPosition)
   }
 
   // Handle drag start
@@ -27,37 +30,94 @@ export default function KanbanBoard() {
     setDraggedTask(task)
   }
 
-  // Handle drag over column
+  // Handle drag over column: remember the column and where between its cards the pointer is
   const handleDragOver = (e, columnId) => {
     e.preventDefault()
     setDragOverColumnId(columnId)
+
+    const cards = [...e.currentTarget.querySelectorAll("[data-task-id]")].filter(
+      (el) => Number(el.dataset.taskId) !== draggedTask?.id,
+    )
+    let index = cards.length
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect()
+      if (e.clientY < rect.top + rect.height / 2) {
+        index = i
+        break
+      }
+    }
+    setDropIndex(index)
   }
 
-  // Handle drop on column
+  // Handle drop on column: insert at the hovered slot, renumber, and persist what changed
   const handleDrop = async (e, columnId) => {
     e.preventDefault()
     e.stopPropagation() // Prevent event bubbling
 
-    if (!draggedTask) return
+    const task = draggedTask
+    const targetTasks = getSortedTasks(columnId).filter((t) => t.id !== task?.id)
+    const index = Math.min(dropIndex ?? targetTasks.length, targetTasks.length)
 
-    // Only move if the task is being moved to a different column
-    if (draggedTask.status !== columnId) {
-      try {
-        await moveTask(draggedTask.id, columnId)
-      } catch (error) {
-        // Error is handled in the provider
-      }
+    resetDrag()
+    if (!task) return
+
+    const ordered = [...targetTasks]
+    ordered.splice(index, 0, task)
+
+    const items = []
+    ordered.forEach((t, position) => {
+      const changed = t.id === task.id ? t.status !== columnId || t.position !== position : t.position !== position
+      if (changed) items.push({ id: t.id, status: columnId, position })
+    })
+
+    // leaving another column: close the gap there
+    if (task.status !== columnId) {
+      getSortedTasks(task.status)
+        .filter((t) => t.id !== task.id)
+        .forEach((t, position) => {
+          if (t.position !== position) items.push({ id: t.id, status: t.status, position })
+        })
     }
 
-    // Reset drag state
+    await reorderTasks(items)
+  }
+
+  const resetDrag = () => {
     setDraggedTask(null)
     setDragOverColumnId(null)
+    setDropIndex(null)
   }
 
   // Handle drag end (cleanup)
-  const handleDragEnd = () => {
-    setDraggedTask(null)
-    setDragOverColumnId(null)
+  const handleDragEnd = resetDrag
+
+  // Cards of a column with the drop indicator slotted in at the hovered position
+  const renderColumnTasks = (columnId) => {
+    const columnTasks = getSortedTasks(columnId)
+    const showIndicator =
+      draggedTask && dragOverColumnId === columnId && dropIndex !== null && columnTasks.length > 0
+    const nodes = []
+    let slot = 0
+
+    columnTasks.forEach((task) => {
+      const isDragged = draggedTask?.id === task.id
+      if (!isDragged) {
+        if (showIndicator && slot === dropIndex) nodes.push(<DropIndicator key="drop-indicator" />)
+        slot++
+      }
+      nodes.push(
+        <TaskCard
+          key={task.id}
+          task={task}
+          onEdit={() => openEditTaskModal(task)}
+          isDragging={isDragged}
+          onDragStart={() => handleDragStart(task)}
+          onDragEnd={handleDragEnd}
+        />,
+      )
+    })
+    if (showIndicator && dropIndex >= slot) nodes.push(<DropIndicator key="drop-indicator" />)
+    return nodes
   }
 
   const openCreateTaskModal = () => {
@@ -156,16 +216,7 @@ export default function KanbanBoard() {
               onDragOver={(e) => handleDragOver(e, column.id)}
               data-column-id={column.id}
             >
-              {getSortedTasks(column.id).map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onEdit={() => openEditTaskModal(task)}
-                  isDragging={draggedTask?.id === task.id}
-                  onDragStart={() => handleDragStart(task)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
+              {renderColumnTasks(column.id)}
 
               {/* Empty state for columns with no tasks */}
               {getSortedTasks(column.id).length === 0 && (
@@ -186,6 +237,15 @@ export default function KanbanBoard() {
       </div>
 
       <TaskModal isOpen={isTaskModalOpen} onClose={closeTaskModal} task={editingTask} />
+    </div>
+  )
+}
+
+// Takes no layout space (negative margin cancels the list gap) so cards don't jump while dragging
+function DropIndicator() {
+  return (
+    <div className="relative h-0 -mb-2 pointer-events-none" aria-hidden="true">
+      <div className="absolute inset-x-0 -top-1 h-0.5 rounded bg-primary" />
     </div>
   )
 }

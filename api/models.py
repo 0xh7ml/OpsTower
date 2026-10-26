@@ -24,6 +24,8 @@ class Task(models.Model):
     
     due_date = models.DateTimeField(null=True, blank=True)
     assigned_to = models.CharField(max_length=100, null=True, blank=True)
+    # manual order inside a status column (lowest first)
+    position = models.PositiveIntegerField(default=0)
     
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tasks')
     
@@ -31,7 +33,7 @@ class Task(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['position', '-created_at']
         verbose_name = 'Task'
         verbose_name_plural = 'Tasks'
         db_table = 'task'
