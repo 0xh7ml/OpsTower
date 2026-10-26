@@ -1,0 +1,348 @@
+"use client"
+
+import { createContext, useContext, useReducer, useEffect, useCallback } from "react"
+import { apiClient, getAuthToken, removeAuthToken, setAuthToken } from "@/lib/api"
+import { compareByPosition, getOverdueTasks, mapApiStatus, mapDisplayStatus, mapApiPriority, mapDisplayPriority } from "@/lib/utils"
+import { toast } from "react-hot-toast"
+
+const fixedColumns = [
+  { id: "todo", title: "To Do", color: "bg-blue-500" },
+  { id: "in-progress", title: "In Progress", color: "bg-yellow-500" },
+  { id: "completed", title: "Completed", color: "bg-green-500" },
+  { id: "blocked", title: "Blocked", color: "bg-red-500" },
+]
+
+const initialState = {
+  tasks: [],
+  columns: fixedColumns,
+  loading: false,
+  error: null,
+  user: null,
+  isAuthenticated: false,
+}
+
+const KanbanContext = createContext(undefined)
+
+function kanbanReducer(state, action) {
+  switch (action.type) {
+    case "SET_LOADING":
+      return { ...state, loading: action.loading }
+    case "SET_ERROR":
+      return { ...state, error: action.error, loading: false }
+    case "SET_TASKS":
+      return { ...state, tasks: action.tasks, loading: false, error: null }
+    case "ADD_TASK":
+      return { ...state, tasks: [...state.tasks, action.task] }
+    case "UPDATE_TASK":
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => (task.id === action.task.id ? action.task : task)),
+      }
+    case "DELETE_TASK":
+      return {
+        ...state,
+        tasks: state.tasks.filter((task) => task.id !== action.taskId),
+      }
+    case "REORDER_TASKS": {
+      const changes = new Map(action.items.map((item) => [item.id, item]))
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => {
+          const change = changes.get(task.id)
+          return change ? { ...task, status: change.status, position: change.position } : task
+        }),
+      }
+    }
+    case "MOVE_TASK_TO_BLOCKED":
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => {
+          const blockedTask = action.tasks.find((t) => t.id === task.id)
+          return blockedTask ? blockedTask : task
+        }),
+      }
+    case "SET_USER":
+      return { ...state, user: action.user, isAuthenticated: true }
+    case "LOGOUT":
+      return { ...state, user: null, isAuthenticated: false, tasks: [] }
+    default:
+      return state
+  }
+}
+
+// Transform API task to display format
+function transformApiTask(apiTask) {
+  return {
+    id: apiTask.id,
+    title: apiTask.title,
+    description: apiTask.description,
+    status: mapApiStatus(apiTask.status),
+    priority: mapApiPriority(apiTask.priority),
+    due_date: apiTask.due_date,
+    assigned_to: apiTask.assigned_to,
+    position: apiTask.position ?? 0,
+    created_at: apiTask.created_at,
+    updated_at: apiTask.updated_at,
+  }
+}
+
+// Transform display task to API format
+function transformDisplayTask(displayTask) {
+  return {
+    title: displayTask.title,
+    description: displayTask.description,
+    status: mapDisplayStatus(displayTask.status),
+    priority: mapDisplayPriority(displayTask.priority),
+    due_date: displayTask.due_date
+  }
+}
+
+// Add debounce utility
+const debounce = (func, wait) => {
+  let timeout
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout)
+      func(...args)
+    }
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+  }
+}
+
+export function KanbanProvider({ children }) {
+  // Read the saved token up front: starting "logged out" and flipping in an effect made the
+  // login page and /home redirect to each other in a loop.
+  const [state, dispatch] = useReducer(kanbanReducer, initialState, (initial) =>
+    getAuthToken() ? { ...initial, isAuthenticated: true, user: { username: "User" } } : initial,
+  )
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      dispatch({ type: "SET_LOADING", loading: true })
+      const apiTasks = await apiClient.getTasks()
+      const transformedTasks = apiTasks.map(transformApiTask)
+      dispatch({ type: "SET_TASKS", tasks: transformedTasks })
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch tasks"
+      dispatch({ type: "SET_ERROR", error: errorMessage })
+      toast.error(errorMessage)
+    }
+  }, [])
+
+  const addTask = async (taskData) => {
+    try {
+      const apiTaskData = transformDisplayTask(taskData)
+      const newApiTask = await apiClient.createTask(apiTaskData)
+      const newTask = transformApiTask(newApiTask)
+      dispatch({ type: "ADD_TASK", task: newTask })
+      toast.success("Task created successfully")
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to create task"
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  const updateTask = async (task) => {
+    try {
+      const apiTaskData = transformDisplayTask(task)
+      const updatedApiTask = await apiClient.updateTask(task.id, apiTaskData)
+      const updatedTask = transformApiTask(updatedApiTask)
+      dispatch({ type: "UPDATE_TASK", task: updatedTask })
+      toast.success("Task updated successfully")
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to update task"
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  const deleteTask = async (taskId) => {
+    try {
+      await apiClient.deleteTask(taskId)
+      dispatch({ type: "DELETE_TASK", taskId })
+      toast.success("Task deleted successfully")
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to delete task"
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  const moveTask = async (taskId, newStatus) => {
+    try {
+      const task = state.tasks.find((t) => t.id === taskId)
+      if (!task) return
+
+      const updatedTask = { ...task, status: newStatus }
+      const apiTaskData = transformDisplayTask(updatedTask)
+      const updatedApiTask = await apiClient.updateTask(taskId, apiTaskData)
+      const transformedTask = transformApiTask(updatedApiTask)
+
+      dispatch({ type: "UPDATE_TASK", task: transformedTask })
+
+      const columnTitle = fixedColumns.find((c) => c.id === newStatus)?.title || newStatus
+      toast.success(`Task moved to ${columnTitle}`)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to move task"
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  /**
+   * Persist a new order. `items` is [{ id, status, position }] with display statuses
+   * ("todo", "in-progress", ...) covering every task whose column or position changed.
+   * Applied optimistically; reloaded from the server if the request fails.
+   */
+  const reorderTasks = async (items) => {
+    if (items.length === 0) return
+    const previousStatus = new Map(state.tasks.map((t) => [t.id, t.status]))
+    dispatch({ type: "REORDER_TASKS", items })
+    try {
+      await apiClient.reorderTasks(
+        items.map((i) => ({ id: i.id, status: mapDisplayStatus(i.status), position: i.position })),
+      )
+      const moved = items.find((i) => previousStatus.get(i.id) !== i.status)
+      if (moved) {
+        toast.success(`Task moved to ${fixedColumns.find((c) => c.id === moved.status)?.title || moved.status}`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to reorder tasks")
+      fetchTasks()
+    }
+  }
+
+  // Move a task one slot up (-1) or down (+1) inside its column (keyboard / touch alternative to dragging)
+  const shiftTask = async (taskId, delta) => {
+    const task = state.tasks.find((t) => t.id === taskId)
+    if (!task) return
+    const column = state.tasks.filter((t) => t.status === task.status).sort(compareByPosition)
+    const from = column.findIndex((t) => t.id === taskId)
+    const to = from + delta
+    if (to < 0 || to >= column.length) return
+    column.splice(to, 0, column.splice(from, 1)[0])
+    await reorderTasks(column.map((t, position) => ({ id: t.id, status: t.status, position })))
+  }
+
+  // Debounce the checkOverdueTasks function
+  const debouncedCheckOverdueTasks = useCallback(
+    debounce(async () => {
+      try {
+        const overdueTasks = getOverdueTasks(state.tasks)
+
+        if (overdueTasks.length > 0) {
+          const blockedTasks = []
+
+          for (const task of overdueTasks) {
+            try {
+              const updatedTask = { ...task, status: "blocked" }
+              const apiTaskData = transformDisplayTask(updatedTask)
+              const updatedApiTask = await apiClient.updateTask(task.id, apiTaskData)
+              const transformedTask = transformApiTask(updatedApiTask)
+              blockedTasks.push(transformedTask)
+            } catch (error) {
+              console.error(`Failed to move overdue task ${task.id} to blocked:`, error)
+            }
+          }
+
+          if (blockedTasks.length > 0) {
+            dispatch({ type: "MOVE_TASK_TO_BLOCKED", tasks: blockedTasks })
+            toast.success(`${blockedTasks.length} overdue task(s) moved to Blocked`)
+          }
+        }
+      } catch (error) {
+        console.error("Error checking overdue tasks:", error)
+      }
+    }, 1000),
+    [state.tasks]
+  )
+
+  const login = async (username, password) => {
+    try {
+      dispatch({ type: "SET_LOADING", loading: true })
+      const response = await apiClient.login(username, password)
+      setAuthToken(response.access)
+      // You might want to fetch user info here if your API provides it
+      dispatch({ type: "SET_USER", user: { username } })
+      await fetchTasks()
+      toast.success("Login successful")
+      return response
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Login failed"
+      dispatch({ type: "SET_ERROR", error: errorMessage })
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  const signup = async (email, password, firstName, lastName) => {
+    try {
+      dispatch({ type: "SET_LOADING", loading: true })
+      const response = await apiClient.signup(email, password, firstName, lastName)
+      toast.success("Account created successfully. Please login.")
+      dispatch({ type: "SET_LOADING", loading: false })
+      return response
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Signup failed"
+      dispatch({ type: "SET_ERROR", error: errorMessage })
+      toast.error(errorMessage)
+      throw error
+    }
+  }
+
+  const logout = () => {
+    removeAuthToken()
+    dispatch({ type: "LOGOUT" })
+    toast.success("Logged out successfully")
+  }
+
+  // Fetch tasks on mount - only on client side
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const token = getAuthToken()
+    if (token) {
+      dispatch({ type: "SET_USER", user: { username: "User" } })
+      fetchTasks()
+    }
+  }, [fetchTasks])
+
+  // Modify the useEffect for checking overdue tasks
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (state.tasks.length === 0) return
+
+    debouncedCheckOverdueTasks()
+  }, [state.tasks, debouncedCheckOverdueTasks])
+
+  return (
+    <KanbanContext.Provider
+      value={{
+        state,
+        fetchTasks,
+        addTask,
+        updateTask,
+        deleteTask,
+        moveTask,
+        reorderTasks,
+        shiftTask,
+        checkOverdueTasks: debouncedCheckOverdueTasks,
+        login,
+        signup,
+        logout,
+      }}
+    >
+      {children}
+    </KanbanContext.Provider>
+  )
+}
+
+export function useKanban() {
+  const context = useContext(KanbanContext)
+  if (context === undefined) {
+    throw new Error("useKanban must be used within a KanbanProvider")
+  }
+  return context
+}

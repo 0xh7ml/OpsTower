@@ -1,0 +1,15 @@
+{
+  "name": "opstower-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opstower-db",
+      // replace with the id printed by `wrangler d1 create opstower-db`
+      "database_id": "4dea007b-0930-4a49-b05a-5b4db33327eb",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // secret: `wrangler secret put JWT_SECRET` (local dev: put JWT_SECRET in .dev.vars)
+}
