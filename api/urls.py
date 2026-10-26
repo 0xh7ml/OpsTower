@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 
-from api.views import TaskView, TaskDetailView, SignUpView, IndexView
+from api.views import TaskView, TaskDetailView, SignUpView, IndexView, AnalyticsView, TaskReorderView
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -11,7 +11,10 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     path('', IndexView.as_view(), name='index-view'),
     path('task/', TaskView.as_view(), name='task-view'),
+    path('task/reorder/', TaskReorderView.as_view(), name='task-reorder-view'),
     path('task/<int:pk>/', TaskDetailView.as_view(), name='task-detail-view'),
+
+    path('analytics/', AnalyticsView.as_view(), name='analytics-view'),
 
     path('auth/signup/', SignUpView.as_view(), name='signup-view'),
 

@@ -41,8 +41,8 @@ export default function LoginPage() {
 
     setIsSubmitting(true)
     try {
+      // the isAuthenticated effect above navigates to /home
       await login(formData.username, formData.password)
-      router.push("/home")
     } catch (error) {
       // Error is handled in the provider
     } finally {

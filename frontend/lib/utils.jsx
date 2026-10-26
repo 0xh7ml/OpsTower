@@ -30,6 +30,11 @@ export function isTaskOverdue(task) {
   }
 }
 
+// Manual order inside a column; ties (tasks never reordered) fall back to newest first
+export function compareByPosition(a, b) {
+  return (a.position ?? 0) - (b.position ?? 0) || new Date(b.created_at) - new Date(a.created_at) || b.id - a.id
+}
+
 export function getOverdueTasks(tasks) {
   return tasks.filter(isTaskOverdue)
 }

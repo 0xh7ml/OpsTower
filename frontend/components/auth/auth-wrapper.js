@@ -46,7 +46,6 @@ export default function AuthWrapper() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Project Management</h1>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-muted-foreground">API: 127.0.0.1:8000</div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon">
